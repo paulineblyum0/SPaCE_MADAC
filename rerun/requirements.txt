@@ -1,0 +1,8 @@
+gymnasium
+torch
+tianshou==2.0.1
+tensorboard
+numpy
+scipy
+platypus-opt
+ray

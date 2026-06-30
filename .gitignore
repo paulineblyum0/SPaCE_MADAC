@@ -1,0 +1,10 @@
+# Copy of external repository
+madac/
+
+# Generated results
+rerun/results/
+
+__pycache__/
+*.pyc
+SPaCE_ES/pointMass/results/
+SPaCE_ES/pointMass/plots/
