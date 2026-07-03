@@ -33,7 +33,7 @@ class _EvaluateJob(Job):
 
 
 def get_weights(n_objs, n_points):
-    points = rmoea_problems.getUniformPoints(n_points, n_objs)  # from rmoea_problems
+    points = rmoea_problems.getUniformPoints(n_points, n_objs) 
     if len(points) != n_points:
         print(f'Generate {len(points)} weights but asked to generate {n_points}')
     return points.tolist()
@@ -248,7 +248,7 @@ class MamoBase:
     def moead_step(self, action=None):
         """
         one step update in moea/d
-        inclue solution generation and solution selection
+        include solution generation and solution selection
         @param action: neighboor size; operator type; operator parameter
         :return:
         """

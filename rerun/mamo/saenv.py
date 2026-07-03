@@ -1,7 +1,7 @@
 import random
 import numpy as np
-import gymnasium as gym           # gym → gymnasium
-from gymnasium import spaces      # gym → gymnasium
+import gymnasium as gym
+from gymnasium import spaces
 
 from mamo.moead_env import MamoBase
 
@@ -62,22 +62,20 @@ class MOEAEnv(gym.Env):
         action[2] = _action % (4 * 2) // 2
         action[3] = _action % 2
         reward, done, info = self.env.moead_step(action)
-        # MamoBase returns a single done flag; map to terminated/truncated.
-        # MOEA/D episodes end naturally (budget exhausted), never by time-limit
-        # truncation from outside, so truncated is always False.
+        
         return self.get_obs(), reward, done, False, info   # obs, reward, terminated, truncated, info
 
-    def reset(self, seed=None, options=None):   # seed/options params required by gymnasium API
+    def reset(self, seed=None, options=None):   
         """Returns initial observations and info"""
-        super().reset(seed=seed)                # propagates seed to self.np_random
+        super().reset(seed=seed) # propagates seed to self.np_random
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
         self.env.moead_reset()
-        return self.get_obs(), {}               # gymnasium reset returns (obs, info)
+        return self.get_obs(), {} 
 
     def close(self):
-        self.env.moead_reset()                  # original called self.reset() which now returns a tuple; call inner reset directly
+        self.env.moead_reset()
 
     def get_obs(self):
         """ Returns all agent observations in a list """
@@ -94,12 +92,10 @@ class MOEAEnv(gym.Env):
     def render(self):
         raise NotImplementedError
 
-    # seed() method removed: gymnasium handles seeding via reset(seed=...) and self.np_random
-
 
 if __name__ == "__main__":
     env = MOEAEnv()
-    obs, info = env.reset()                                          # unpack (obs, info)
+    obs, info = env.reset() # unpack (obs, info)
     for i in range(100):
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action) # unpack 5-tuple

@@ -32,8 +32,8 @@ def get_args():
 
 
 class DQNargs:
-    train_num = 2     # reduce from 16
-    test_num = 1       # reduce from 4
+    train_num = 16
+    test_num = 4
     hidden_sizes = [128, 128, 128]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     lr = 3e-4
@@ -42,8 +42,8 @@ class DQNargs:
     target_update_freq = 160
     buffer_size = 50000
     eps_train = 0.1
-    epoch = 2          # reduce from 20
-    step_per_epoch = 1000  # reduce from 20000
+    epoch = 20
+    step_per_epoch = 20000
     step_per_collect = 32
     update_per_step = 0.05  # maps to update_step_num_gradient_steps_per_sample
     batch_size = 32
@@ -110,7 +110,7 @@ if __name__ == "__main__":
             log_path, args.key + 'policy.pth'))
 
     def train_fn(epoch, env_step):
-        # Epsilon annealing schedule, matching original
+        # Epsilon annealing schedule
         if env_step <= 100000:
             policy.set_eps_training(dqn_args.eps_train)
         elif env_step <= 500000:

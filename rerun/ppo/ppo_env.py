@@ -8,24 +8,16 @@ from mamo.saenv import MOEAEnv
 class PPOMOEAEnv(gym.Env):
     """
     Single-agent PPO wrapper around MOEAEnv.
-
-    Changes from the DQN version in saenv.py:
-      - action_space: MultiDiscrete([4, 4, 4, 2]) instead of Discrete(128)
-        Dimensions: [neighbour_size, operator_type, operator_param, adaptive_weights]
-      - observation_space: flat Box(22,) instead of Dict({'obs', 'mask'})
-        The action mask is dropped for the initial baseline run; SB3 MlpPolicy
-        cannot consume it natively.
-      - step(): passes the 4-element action array directly to moead_step(),
-        bypassing the integer-decoding logic in MOEAEnv.step().
     """
 
     def __init__(self, key="WFG6_3", **kwargs):
         super().__init__()
-        # Instantiate the underlying env but do NOT use its step/action_space
+        # Instantiate the underlying env but do not use its step/action_space
         self._inner = MOEAEnv(key=key, **kwargs)
 
         # MultiDiscrete matches the 4 agent action spaces: [4, 4, 4, 2]
-        self.action_space = spaces.MultiDiscrete([4, 4, 4, 2])
+        # Changed to [4, 4, 4] while not using adaptive weights
+        self.action_space = spaces.MultiDiscrete([4, 4, 4])
 
         # Flat Box observation: the 22-dim obs vector only, no mask
         self.observation_space = spaces.Box(
@@ -39,7 +31,7 @@ class PPOMOEAEnv(gym.Env):
     def step(self, action):
         """
         action: np.ndarray of shape (4,), dtype int, from MultiDiscrete sampler.
-        Passed directly to moead_step() — no integer encoding/decoding.
+        Passed directly to moead_step().
         """
         action = np.asarray(action, dtype=np.int32)
         reward, done, info = self._inner.env.moead_step(action)
