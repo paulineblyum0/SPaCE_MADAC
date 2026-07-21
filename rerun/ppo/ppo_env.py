@@ -16,8 +16,7 @@ class PPOMOEAEnv(gym.Env):
         self._inner = MOEAEnv(key=key, **kwargs)
 
         # MultiDiscrete matches the 4 agent action spaces: [4, 4, 4, 2]
-        # Changed to [4, 4, 4] while not using adaptive weights
-        self.action_space = spaces.MultiDiscrete([4, 4, 4])
+        self.action_space = spaces.MultiDiscrete([4, 4, 4, 2])
 
         # Flat Box observation: the 22-dim obs vector only, no mask
         self.observation_space = spaces.Box(
