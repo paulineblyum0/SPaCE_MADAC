@@ -3,6 +3,7 @@ madac/
 
 # Generated results
 rerun/results/
+rerun/ppo/results/
 
 __pycache__/
 *.pyc
