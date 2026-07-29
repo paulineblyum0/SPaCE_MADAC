@@ -5,7 +5,7 @@ evolutionary algorithms, evaluated on the MA-DAC / MaMo benchmark (MOEA/D-based)
 
 This project implements a single-agent PPO baseline (a gap in prior work, which only
 tested DQN and multi-agent methods), and integrates the SPACE curriculum-learning
-algorithm on top of it.
+algorithm on top of it to investigate instance selection on multiobjective DAC.
 
 ## Building on
 
