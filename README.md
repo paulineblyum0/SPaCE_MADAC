@@ -11,8 +11,7 @@ algorithm on top of it.
 
 - Xue et al., **MA-DAC** (NeurIPS 2022)
 - Lu et al., **Seq-MADAC** (NeurIPS 2025)
-- Eimer et al., **SPACE** (self-paced context evaluation)
-- Schulman et al., **PPO** (arXiv:1707.06347)
+- Eimer et al., **SPACE** 
 - Zhang & Li, **MOEA/D**
 
 ## Setup
