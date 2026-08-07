@@ -34,6 +34,9 @@ def get_args():
     parser.add_argument('--budget-ratio', type=int, default=100)
     parser.add_argument('--adaptive-open', action="store_true", default=True)
     parser.add_argument('--early-stop', action="store_true", default=False)
+    parser.add_argument('--use-space', type=int, choices=[0, 1, 2], default=2,
+                         help="Which trained condition to evaluate: "
+                              "0=NO_SPACE, 1=JUST_SIZES, 2=INSTANCE_STATE")
     args = parser.parse_known_args()[0]
     return args
 
@@ -82,7 +85,7 @@ def step_in_env(args, model_path, run_idx):
 
 
 def space_run_baseline(args, model_path):
-    save_path = './results/space/'
+    save_path = f'./results/space/space{args.use_space}/'
     if not os.path.exists(save_path):
         os.umask(0)
         os.makedirs(save_path, mode=0o777)
@@ -99,8 +102,11 @@ def space_run_baseline(args, model_path):
 if __name__ == "__main__":
     args = get_args()
 
-    policy_name = args.key
-    model_path = os.path.join("space", "results", "M_2_46_3", "ppo_model")
+    training_key = args.key
+    condition_dir = f"space{args.use_space}"
+    model_path = os.path.join(
+        "space", "results", training_key, condition_dir, "ppo_model"
+    )
 
     set_global_seeds(args.seed)
     task = Task.get_task(name="all" + args.key.split("_")[-1])

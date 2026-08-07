@@ -1,20 +1,20 @@
-# space/train_space_ppo.py
+# space_parallel/train_space_ppo.py
 """
-SPACE-curriculum PPO training for MaMo.
+SPACE-curriculum PPO training for MaMo, n_envs=16 (SubprocVecEnv).
 
 Run from rerun/ directory:
-    python -m space.train_space_ppo --key M_2_46_3 --use-space 2
+    python -m space_parallel.train_space_ppo --key M_2_46_3 --use-space 2
 
-Mirrors ppo/ppo.py as closely as possible so the two are a fair comparison --
-same PPO hyperparameters, same key/adaptive-open/early-stop/budget-ratio
-handling. The two deliberate differences are:
-  1. n_envs is forced to 1 with DummyVecEnv (not configurable here) --
-     UpdateEnvCallback reads/writes curriculum state via
-     training_env.envs[0].unwrapped, which assumes a single environment.
-  2. --use-space / --instance-ordering select the SPACE condition and are
-     wired into SPaceEnv + UpdateEnvCallback.
+Exists side-by-side with space/train_space_ppo.py (the n_envs=1 version) --
+neither package touches the other's files. See space_parallel/space_env.py
+and space_parallel/space_callback.py module docstrings for what had to
+change architecturally to make SPACE's curriculum logic safe under
+subprocess parallelism.
 
-Results are saved to space/results/<key>/
+Results are saved to space_parallel/results/<key>/space<use_space>/
+(mirrors the space/results/<key>/space{0,1,2}/ layout already fixed in the
+n_envs=1 package, so both trees can be diffed/compared directory-for-
+directory).
 """
 
 import argparse
@@ -24,10 +24,10 @@ import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
-from space.space_env import SPaceEnv
-from space.space_callback import UpdateEnvCallback
+from space_parallel.space_env import SPaceEnvParallel
+from space_parallel.space_callback import UpdateEnvCallbackParallel
 
 
 def parse_args():
@@ -40,6 +40,7 @@ def parse_args():
     parser.add_argument("--adaptive-open", action="store_true", default=True)
     parser.add_argument("--early-stop", action="store_true", default=False)
     parser.add_argument("--budget-ratio", type=int, default=100)
+    parser.add_argument("--n-envs", type=int, default=16)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--ent-coef", type=float, default=0.0)
     parser.add_argument("--n-steps", type=int, default=2048)
@@ -47,7 +48,6 @@ def parse_args():
     parser.add_argument("--pi-arch", type=int, nargs="+", default=[64, 64])
     parser.add_argument("--vf-arch", type=int, nargs="+", default=[64, 64])
 
-    # SPACE-specific
     parser.add_argument(
         "--use-space", type=int, choices=[0, 1, 2], default=2,
         help="0=NO_SPACE (round-robin baseline), 1=JUST_SIZES (ablation), "
@@ -62,26 +62,14 @@ def parse_args():
 
     return parser.parse_args()
 
+ORDERING_NAMES = {0: "absolute", 1: "improvement", 2: "relative_improvement"}
 
 def main():
     args = parse_args()
 
-    condition_dir = f"space{args.use_space}"
-    results_dir = os.path.join("space", "results", args.key, condition_dir)
-    os.makedirs(results_dir, exist_ok=True)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(name)s] %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(os.path.join(results_dir, "space_debug.log")),
-        ],
-    )
-
     if args.check:
         print("Running environment checker...")
-        env = SPaceEnv(
+        env = SPaceEnvParallel(
             key=args.key, use_space=args.use_space, seed=args.seed,
             adaptive_open=args.adaptive_open, budget_ratio=args.budget_ratio,
         )
@@ -90,20 +78,39 @@ def main():
         env.close()
         return
 
-    # n_envs is forced to 1 (DummyVecEnv) -- see module docstring.
+    if args.use_space == 2:  # INSTANCE_STATE — ordering choice actually matters
+        ordering_tag = ORDERING_NAMES[args.instance_ordering]
+        results_dir = os.path.join(
+            "space_parallel", "results", args.key,
+            f"space{args.use_space}_{ordering_tag}",
+        )
+    else:
+        results_dir = os.path.join(
+            "space_parallel", "results", args.key, f"space{args.use_space}"
+        )
+    os.makedirs(results_dir, exist_ok=True)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(os.path.join(results_dir, "space_debug.log")),
+        ],
+    )
+
     env = make_vec_env(
-        lambda: SPaceEnv(
+        lambda: SPaceEnvParallel(
             key=args.key,
             use_space=args.use_space,
             adaptive_open=args.adaptive_open,
             budget_ratio=args.budget_ratio,
             early_stop=args.early_stop,
         ),
-        n_envs=1,
+        n_envs=args.n_envs,
         seed=args.seed,
         monitor_dir=results_dir,
         monitor_kwargs={"info_keywords": ("best_igd", "last_igd")},
-        vec_env_cls=DummyVecEnv,
+        vec_env_cls=SubprocVecEnv,
     )
 
     model = PPO(
@@ -119,16 +126,23 @@ def main():
         tensorboard_log=os.path.join(results_dir, "tb"),
     )
 
-    space_callback = UpdateEnvCallback(
+    space_callback = UpdateEnvCallbackParallel(
+        key=args.key,
         use_space_val=args.use_space,
         instance_ordering_val=args.instance_ordering,
         stability_threshold=args.stability_threshold,
         eta_const=args.eta,
+        probe_env_kwargs=dict(
+            adaptive_open=args.adaptive_open,
+            budget_ratio=args.budget_ratio,
+            early_stop=args.early_stop,
+        ),
     )
 
     print(
-        f"Training SPACE-PPO on {args.key} for {args.timesteps:,} steps "
-        f"(use_space={args.use_space}, instance_ordering={args.instance_ordering})..."
+        f"Training SPACE-PPO (parallel, n_envs={args.n_envs}) on {args.key} "
+        f"for {args.timesteps:,} steps (use_space={args.use_space}, "
+        f"instance_ordering={args.instance_ordering})..."
     )
     model.learn(total_timesteps=args.timesteps, callback=[space_callback])
 

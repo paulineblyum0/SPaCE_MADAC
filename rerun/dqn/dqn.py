@@ -4,6 +4,7 @@ import argparse
 
 from mamo.saenv import MOEAEnv
 
+import ray
 from tianshou.data import Collector, VectorReplayBuffer
 from tianshou.env import SubprocVectorEnv
 from tianshou.algorithm.modelfree.dqn import DQN, DiscreteQLearningPolicy
@@ -12,6 +13,8 @@ from tianshou.trainer import OffPolicyTrainer, OffPolicyTrainerParams
 from tianshou.utils import TensorboardLogger
 from tianshou.utils.net.common import Net
 from torch.utils.tensorboard import SummaryWriter
+
+from dqn.igd_eval_hook import DQNIGDEvalHook
 
 
 def get_args():
@@ -24,7 +27,6 @@ def get_args():
     parser.add_argument('--save-history', action="store_true", default=False)
     parser.add_argument('--baseline', action="store_true", default=False)
     parser.add_argument('--adaptive-open', action="store_true", default=False)
-    parser.add_argument('--wo-obs', action="store_true", default=False)
     parser.add_argument('--early-stop', action="store_true", default=False)
     parser.add_argument('--test', action="store_true", default=False)
     args = parser.parse_known_args()[0]
@@ -33,7 +35,6 @@ def get_args():
 
 class DQNargs:
     train_num = 16
-    test_num = 4
     hidden_sizes = [128, 128, 128]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     lr = 3e-4
@@ -47,25 +48,28 @@ class DQNargs:
     step_per_collect = 32
     update_per_step = 0.05  # maps to update_step_num_gradient_steps_per_sample
     batch_size = 32
-    episode_per_test = 15
+
+    # mid-training IGD diagnostic curve (separate from the final 30-repeat
+    # evaluation done later by test_dqn.py) -- finer resolution early,
+    # coarser once past switch_step, since improvement is typically
+    # front-loaded and the tail doesn't need as fine a grid
+    igd_eval_freq_early = 5000
+    igd_eval_freq_late = 10000
+    igd_eval_switch_step = 100000
+    igd_eval_repeats = 10
 
 
 if __name__ == "__main__":
     args = get_args()
     args.early_stop = True
-    args_test = get_args()
     dqn_args = DQNargs()
 
     env = MOEAEnv(**vars(args))
 
     train_envs = SubprocVectorEnv(
         [lambda: MOEAEnv(**vars(args)) for _ in range(dqn_args.train_num)])
-    args_test.key = "WFG6" + args.key[-2:]
-    test_envs = SubprocVectorEnv(
-        [lambda: MOEAEnv(**vars(args_test)) for _ in range(dqn_args.test_num)])
 
     train_envs.seed(args.seed)
-    test_envs.seed(args.seed)
 
     # observation_space is a Dict space with 'obs' and 'mask' keys;
     # Net only sees the 'obs' subspace
@@ -78,7 +82,6 @@ if __name__ == "__main__":
         hidden_sizes=dqn_args.hidden_sizes,
     ).to(dqn_args.device)
 
-    # In tianshou 2.0.1, policy and algorithm are separate objects.
     # DiscreteQLearningPolicy handles action selection and epsilon-greedy exploration.
     # DQN handles the Q-learning update logic.
     policy = DiscreteQLearningPolicy(
@@ -99,15 +102,11 @@ if __name__ == "__main__":
 
     buf = VectorReplayBuffer(dqn_args.buffer_size, buffer_num=len(train_envs))
     train_collector = Collector(policy, train_envs, buf, exploration_noise=True)
-    test_collector = Collector(policy, test_envs, exploration_noise=False)
 
-    log_path = os.path.join('./results/dqn', args.key)
+    ao_tag = '' if args.adaptive_open else '_ao_false'
+    log_path = os.path.join('./results/dqn', args.key, f'seed_{args.seed}{ao_tag}')
     writer = SummaryWriter(log_path)
     logger = TensorboardLogger(writer)
-
-    def save_best_fn(alg):
-        torch.save(alg.policy.state_dict(), os.path.join(
-            log_path, args.key + 'policy.pth'))
 
     def train_fn(epoch, env_step):
         # Epsilon annealing schedule
@@ -120,6 +119,22 @@ if __name__ == "__main__":
         else:
             policy.set_eps_training(0.1 * dqn_args.eps_train)
 
+    # Ray workers for the mid-training eval hook -- separate pool from the
+    # SubprocVectorEnv workers above, sized to igd_eval_repeats since the
+    # only thing parallelised within a single problem's eval is the repeats.
+    ray.init(num_cpus=dqn_args.igd_eval_repeats)
+
+    igd_hook = DQNIGDEvalHook(
+        policy=policy,
+        args=args,
+        eval_freq_early=dqn_args.igd_eval_freq_early,
+        eval_freq_late=dqn_args.igd_eval_freq_late,
+        switch_step=dqn_args.igd_eval_switch_step,
+        n_repeats=dqn_args.igd_eval_repeats,
+        base_train_fn=train_fn,
+        save_path=os.path.join(log_path, "igd_curve.npz"),
+    )
+
     trainer = OffPolicyTrainer(
         algorithm=algorithm,
         params=OffPolicyTrainerParams(
@@ -129,14 +144,17 @@ if __name__ == "__main__":
             collection_step_num_episodes=None,
             update_step_num_gradient_steps_per_sample=dqn_args.update_per_step,
             batch_size=dqn_args.batch_size,
-            test_collector=test_collector,
-            test_step_num_episodes=dqn_args.episode_per_test,
             training_collector=train_collector,
-            training_fn=train_fn,
-            save_best_fn=save_best_fn,
+            training_fn=igd_hook,
             logger=logger,
         ),
     )
 
     result = trainer.run()
     print(f'Finished training! Duration: {result.timing.total_time:.2f}s')
+
+    # Save final policy unconditionally, same convention as ppo.py
+    # (model.save() after model.learn() with no intermediate "best" tracking).
+    model_path = os.path.join(log_path, args.key + 'policy.pth')
+    torch.save(policy.state_dict(), model_path)
+    print(f'Model saved to {model_path}')

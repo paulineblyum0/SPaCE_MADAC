@@ -17,6 +17,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
 from ppo.ppo_env import PPOMOEAEnv
+from ppo.ppo_igd_eval_hook import PPOIGDEvalHook
 
 
 def parse_args():
@@ -36,34 +37,43 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--pi-arch", type=int, nargs="+", default=[64, 64])
     parser.add_argument("--vf-arch", type=int, nargs="+", default=[64, 64])
+    parser.add_argument("--igd-eval-freq-early", type=int, default=5000,
+                    help="Env steps between mid-training IGD evals while num_timesteps < igd-eval-switch-step (0 disables eval entirely)")
+    parser.add_argument("--igd-eval-freq-late", type=int, default=10000,
+                    help="Env steps between mid-training IGD evals after igd-eval-switch-step")
+    parser.add_argument("--igd-eval-switch-step", type=int, default=100_000,
+                    help="Timestep at which cadence switches from igd-eval-freq-early to igd-eval-freq-late")
+    parser.add_argument("--igd-eval-repeats", type=int, default=10,
+                    help="Ray-parallel repeats per problem for mid-training IGD eval")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
- 
+
     env = PPOMOEAEnv(key=args.key, seed=args.seed, adaptive_open=args.adaptive_open,
-                      budget_ratio=args.budget_ratio)
- 
+                      budget_ratio=args.budget_ratio, population_size=args.population_size)
+
     if args.check:
         print("Running environment checker...")
         check_env(env, warn=True)
         print("check_env passed.")
         env.close()
         return
- 
+
     results_dir = os.path.join("ppo", "results", args.key)
     os.makedirs(results_dir, exist_ok=True)
     env = make_vec_env(
         lambda: PPOMOEAEnv(key=args.key, adaptive_open=args.adaptive_open,
-                            budget_ratio=args.budget_ratio, early_stop=args.early_stop),
+                            budget_ratio=args.budget_ratio, early_stop=args.early_stop,
+                            population_size=args.population_size),
         n_envs=args.n_envs,
         seed=args.seed,
         monitor_dir=results_dir,
         monitor_kwargs={"info_keywords": ("best_igd", "last_igd")},
         vec_env_cls=SubprocVecEnv,
     )
- 
+
     model = PPO(
         "MlpPolicy",
         env,
@@ -76,14 +86,25 @@ def main():
         policy_kwargs=dict(net_arch=dict(pi=args.pi_arch, vf=args.vf_arch)),
         tensorboard_log=os.path.join(results_dir, "tb"),
     )
- 
+    print(model)
     print(f"Training PPO on {args.key} for {args.timesteps:,} steps...")
-    model.learn(total_timesteps=args.timesteps)
- 
+
+    callback = None
+    if args.igd_eval_freq_early > 0:
+        callback = PPOIGDEvalHook(
+            train_args=args,
+            eval_freq_early=args.igd_eval_freq_early,
+            eval_freq_late=args.igd_eval_freq_late,
+            switch_step=args.igd_eval_switch_step,
+            n_repeats=args.igd_eval_repeats,
+        )
+
+    model.learn(total_timesteps=args.timesteps, callback=callback)
+
     model_path = os.path.join(results_dir, "ppo_model")
     model.save(model_path)
     print(f"Model saved to {model_path}.zip")
- 
+
     env.close()
 
 

@@ -7,3 +7,4 @@ scipy
 platypus-opt
 ray
 stable-baselines3
+optuna
