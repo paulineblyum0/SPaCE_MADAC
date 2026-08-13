@@ -24,7 +24,7 @@ def get_args():
     parser.add_argument('--baseline', action="store_true",
                         default=False)  # use default operator Type
     parser.add_argument('--adaptive-open', action="store_true",
-                        default=False)  # use adaptive Weights
+                        default=True)  # use adaptive Weights
     parser.add_argument('--early-stop', action="store_true", default=False)
     parser.add_argument('--test', action="store_true", default=False)
     args = parser.parse_known_args()[0]

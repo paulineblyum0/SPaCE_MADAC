@@ -15,6 +15,14 @@ Results are saved to space_parallel/results/<key>/space<use_space>/
 (mirrors the space/results/<key>/space{0,1,2}/ layout already fixed in the
 n_envs=1 package, so both trees can be diffed/compared directory-for-
 directory).
+
+Mid-training IGD curve (--igd-eval-freq-early > 0, on by default): fires
+space_igd_eval_hook.SpaceIGDEvalHook alongside the curriculum callback.
+Both are BaseCallback instances passed to model.learn(callback=[...]);
+their _on_step/_on_rollout_end/_on_training_end hooks run independently
+per-callback in SB3's CallbackList, so the eval hook does not interfere
+with curriculum updates and vice versa -- see space_igd_eval_hook.py's
+_on_step docstring note for why that's safe rather than just convenient.
 """
 
 import argparse
@@ -28,6 +36,7 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from space_parallel.space_env import SPaceEnvParallel
 from space_parallel.space_callback import UpdateEnvCallbackParallel
+from space_parallel.space_igd_eval_hook import SpaceIGDEvalHook
 
 
 def parse_args():
@@ -54,11 +63,21 @@ def parse_args():
              "2=INSTANCE_STATE (full SPACE)",
     )
     parser.add_argument(
-        "--instance-ordering", type=int, choices=[0, 1, 2], default=0,
+        "--instance-ordering", type=int, choices=[0, 1, 2], default=1,
         help="0=ABSOLUTE, 1=IMPROVEMENT, 2=RELATIVE_IMPROVEMENT",
     )
-    parser.add_argument("--stability-threshold", type=int, default=3)
     parser.add_argument("--eta", type=float, default=0.1)
+
+    # Same flags/defaults as ppo/ppo.py, so the two curves are cadence-
+    # matched and directly comparable for RQ3.
+    parser.add_argument("--igd-eval-freq-early", type=int, default=5000,
+                        help="Env steps between mid-training IGD evals while num_timesteps < igd-eval-switch-step (0 disables eval entirely)")
+    parser.add_argument("--igd-eval-freq-late", type=int, default=10000,
+                        help="Env steps between mid-training IGD evals after igd-eval-switch-step")
+    parser.add_argument("--igd-eval-switch-step", type=int, default=100_000,
+                        help="Timestep at which cadence switches from igd-eval-freq-early to igd-eval-freq-late")
+    parser.add_argument("--igd-eval-repeats", type=int, default=10,
+                        help="Ray-parallel repeats per problem for mid-training IGD eval")
 
     return parser.parse_args()
 
@@ -126,25 +145,36 @@ def main():
         tensorboard_log=os.path.join(results_dir, "tb"),
     )
 
-    space_callback = UpdateEnvCallbackParallel(
-        key=args.key,
-        use_space_val=args.use_space,
-        instance_ordering_val=args.instance_ordering,
-        stability_threshold=args.stability_threshold,
-        eta_const=args.eta,
-        probe_env_kwargs=dict(
-            adaptive_open=args.adaptive_open,
-            budget_ratio=args.budget_ratio,
-            early_stop=args.early_stop,
-        ),
-    )
+    callbacks = [
+        UpdateEnvCallbackParallel(
+            key=args.key,
+            use_space_val=args.use_space,
+            instance_ordering_val=args.instance_ordering,
+            eta_const=args.eta,
+            probe_env_kwargs=dict(
+                adaptive_open=args.adaptive_open,
+                budget_ratio=args.budget_ratio,
+                early_stop=args.early_stop,
+            ),
+        )
+    ]
+
+    if args.igd_eval_freq_early > 0:
+        callbacks.append(SpaceIGDEvalHook(
+            train_args=args,
+            results_dir=results_dir,
+            eval_freq_early=args.igd_eval_freq_early,
+            eval_freq_late=args.igd_eval_freq_late,
+            switch_step=args.igd_eval_switch_step,
+            n_repeats=args.igd_eval_repeats,
+        ))
 
     print(
         f"Training SPACE-PPO (parallel, n_envs={args.n_envs}) on {args.key} "
         f"for {args.timesteps:,} steps (use_space={args.use_space}, "
         f"instance_ordering={args.instance_ordering})..."
     )
-    model.learn(total_timesteps=args.timesteps, callback=[space_callback])
+    model.learn(total_timesteps=args.timesteps, callback=callbacks)
 
     model_path = os.path.join(results_dir, "ppo_model")
     model.save(model_path)

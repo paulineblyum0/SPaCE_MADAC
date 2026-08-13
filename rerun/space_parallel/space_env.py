@@ -26,6 +26,7 @@ that; its global-index semantics are simpler and already validated.
 
 from ppo.ppo_env import PPOMOEAEnv
 from space_parallel.space_enum import space_operation
+from mamo.mamo_register import get_maenv
 
 
 class SPaceEnvParallel(PPOMOEAEnv):
@@ -34,10 +35,13 @@ class SPaceEnvParallel(PPOMOEAEnv):
 
         self.use_space = space_operation(use_space)
 
-        # Canonical instance ordering, captured before MamoBase can shuffle
-        # it -- same rationale as space.space_env.SPaceEnv.
-        mamo_env = self._inner.env
-        self._canonical_instances = list(mamo_env.func_select)
+        # Canonical instance ordering, derived from the register rather than
+        # from MamoBase.func_select. MamoBase.__init__ applies an unseeded
+        # random.shuffle to func_select, so reading it here would give a
+        # different index->instance mapping in every process and every run.
+        # This is MamoBase's pre-shuffle construction order.
+        funcs, nobjs = get_maenv(key)
+        self._canonical_instances = [(f, n) for f in funcs for n in nobjs]
         self.num_training_functions = len(self._canonical_instances)
 
         # Local curriculum state -- lives entirely inside this subprocess.

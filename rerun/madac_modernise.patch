@@ -1,0 +1,535 @@
+diff -ruN a/controllers/basic_controller.py b/controllers/basic_controller.py
+--- a/controllers/basic_controller.py	2026-08-12 15:33:12.499275724 +0000
++++ b/controllers/basic_controller.py	2026-08-12 15:33:27.696442249 +0000
+@@ -1,5 +1,5 @@
+-from modules.agents import REGISTRY as agent_REGISTRY
+-from components.action_selectors import REGISTRY as action_REGISTRY
++from madac.modules.agents import REGISTRY as agent_REGISTRY
++from madac.components.action_selectors import REGISTRY as action_REGISTRY
+ import torch as th
+ 
+ 
+diff -ruN a/controllers/maddpg_controller.py b/controllers/maddpg_controller.py
+--- a/controllers/maddpg_controller.py	2026-08-12 15:33:12.499254912 +0000
++++ b/controllers/maddpg_controller.py	2026-08-12 15:33:27.697311744 +0000
+@@ -1,5 +1,5 @@
+-from modules.agents import REGISTRY as agent_REGISTRY
+-from components.action_selectors import REGISTRY as action_REGISTRY
++from madac.modules.agents import REGISTRY as agent_REGISTRY
++from madac.components.action_selectors import REGISTRY as action_REGISTRY
+ import torch as th
+ from torch.autograd import Variable
+ import torch.nn.functional as F
+diff -ruN a/controllers/non_shared_controller.py b/controllers/non_shared_controller.py
+--- a/controllers/non_shared_controller.py	2026-08-12 15:33:12.499213281 +0000
++++ b/controllers/non_shared_controller.py	2026-08-12 15:33:27.696857729 +0000
+@@ -1,5 +1,5 @@
+-from modules.agents import REGISTRY as agent_REGISTRY
+-from components.action_selectors import REGISTRY as action_REGISTRY
++from madac.modules.agents import REGISTRY as agent_REGISTRY
++from madac.components.action_selectors import REGISTRY as action_REGISTRY
+ import torch as th
+ 
+ class NonSharedMAC:
+diff -ruN a/envs/__init__.py b/envs/__init__.py
+--- a/envs/__init__.py	2026-08-12 15:33:12.499424462 +0000
++++ b/envs/__init__.py	2026-08-12 15:33:17.704112641 +0000
+@@ -13,10 +13,8 @@
+     ObservationWrapper = object
+     spaces = flatdim = GymTimeLimit = None
+ 
+-from madacbench.multiagentenv import MultiAgentEnv
+-from madacbench.mamo.maenv import MOEAEnv
+-from madacbench.sigmoid.local_state_env import SigmoidMultiActMultiValAction
+-from madacbench.sigmoid.global_state_env import SigmoidMultiActMultiValActionState
++from madac.envs.multiagentenv import MultiAgentEnv
++from madac.envs.maenv import MOEAEnv
+ 
+ 
+ def env_fn(env, **kwargs) -> MultiAgentEnv:
+@@ -25,8 +23,6 @@
+ 
+ REGISTRY = {}
+ REGISTRY["moea"] = partial(env_fn, env=MOEAEnv)
+-REGISTRY["sigmoid"] = partial(env_fn, env=SigmoidMultiActMultiValAction)
+-REGISTRY["sigmoid_state"] = partial(env_fn, env=SigmoidMultiActMultiValActionState)
+ 
+ if sys.platform == "linux":
+     os.environ.setdefault(
+diff -ruN a/envs/maenv.py b/envs/maenv.py
+--- a/envs/maenv.py	1970-01-01 00:00:00.000000000 +0000
++++ b/envs/maenv.py	2026-08-12 15:33:21.412331921 +0000
+@@ -0,0 +1,134 @@
++import copy
++import random
++import numpy as np
++
++from madac.envs.multiagentenv import MultiAgentEnv
++from mamo.moead_env import MamoBase
++
++
++class MOEAEnv(MultiAgentEnv):
++    def __init__(self,
++                 key="WFG6_3",
++                 n_ref_points=1000,
++                 population_size=210,
++                 seed=2022,
++                 budget_ratio=50,
++                 test=False,
++                 wo_obs=False,
++                 save_history=False,
++                 early_stop=True,
++                 baseline=False,
++                 adaptive_open=False,
++                 replay=False,
++                 replay_dir=None,
++                 ban_agent=4,
++                 reward_type=0):
++        super().__init__()
++        self.env = MamoBase(key,
++                            n_ref_points,
++                            population_size,
++                            seed,
++                            budget_ratio,
++                            test,
++                            wo_obs,
++                            save_history,
++                            early_stop,
++                            baseline,
++                            adaptive_open,
++                            replay,
++                            replay_dir,
++                            ban_agent,
++                            reward_type)
++        self.n_agents = self.env.n_agents
++        self.episode_limit = self.env.episode_limit
++
++    def step(self, action):
++        """
++        Returns reward, terminated, info
++        :type action: int or np.int
++        :param action: for dimension: Neighbor Size, Operator Type, Operator Parameter, Adaptive Weights
++                [x, x, x, x]: shape=n_agents
++        :return: obs, reward, is_done, info
++        """
++
++        reward, done, info = self.env.moead_step(action)
++        return reward, done, info
++
++    def reset(self):
++        """ Returns initial observations and states """
++        self.env.moead_reset()
++        return self.env.obs
++
++    def close(self):
++        self.reset()
++
++    def get_obs(self):
++        """ Returns all agent observations in a list """
++        return copy.deepcopy([self.env.obs for _ in range(self.env.n_agents)])
++
++    def get_obs_agent(self, agent_id):
++        """ Returns observation for agent_id """
++        return copy.deepcopy(self.env.obs)
++
++    def get_obs_size(self):
++        """ Returns the shape of the observation """
++        return self.env.n_obs
++
++    def get_state(self):
++        return copy.deepcopy(self.env.obs)
++
++    def get_state_size(self):
++        """ Returns the shape of the state"""
++        return self.env.n_obs
++
++    def get_avail_actions(self):
++        return [self.get_avail_agent_actions(i) for i in range(self.env.n_agents)]
++
++    def get_avail_agent_actions(self, agent_id):
++        """ Returns the available actions for agent_id """
++        if self.env.ban_agent != 3:
++            if agent_id < 3:  # 0,1,2
++                if agent_id == self.env.ban_agent:
++                    return [0, 1, 0, 0]
++                else:
++                    return [1, 1, 1, 1]
++            else:  # 3
++                if self.env.adaptive_cooling_time > 0 or (
++                        np.sum(self.env.action_count[0]) >= self.env.adaptive_end // self.env.population_size):
++                    return [1, 0, 0, 0]
++                else:
++                    return [1, 1, 0, 0]
++        elif self.env.ban_agent == 3:
++            if agent_id < 3:
++                return [1, 1, 1, 1]
++            else:
++                return [1, 0, 0, 0]
++
++    def get_total_actions(self):
++        """ Returns the total number of actions an agent could ever take """
++        # TODO: This is only suitable for a discrete 1 dimensional action space for each agent
++        return self.env.n_actions
++
++    def render(self):
++        raise NotImplementedError
++
++    def seed(self, seed):
++        random.seed(seed)
++        np.random.seed(seed)
++
++    def get_stats(self):
++        return None
++
++    def save_replay(self):
++        return self.env.save_replay()
++
++
++if __name__ == "__main__":
++    env = MOEAEnv()
++    env.reset()
++    for i in range(100):
++        action = np.hstack([np.random.randint(0, 4, 3),
++                           np.random.randint(0, 2, 1)])
++        reward, done, info = env.step(action)
++        print(reward, done, info)
++    env.close()
+diff -ruN a/envs/multiagentenv.py b/envs/multiagentenv.py
+--- a/envs/multiagentenv.py	1970-01-01 00:00:00.000000000 +0000
++++ b/envs/multiagentenv.py	2026-08-12 15:33:21.403915509 +0000
+@@ -0,0 +1,76 @@
++from abc import ABC, abstractmethod
++
++
++class MultiAgentEnv(ABC):
++    @abstractmethod
++    def step(self, actions):
++        """ Returns reward, terminated, info """
++        raise NotImplementedError
++
++    @abstractmethod
++    def get_obs(self):
++        """ Returns all agent observations in a list """
++        raise NotImplementedError
++
++    @abstractmethod
++    def get_obs_agent(self, agent_id):
++        """ Returns observation for agent_id """
++        raise NotImplementedError
++
++    @abstractmethod
++    def get_obs_size(self):
++        """ Returns the shape of the observation """
++        raise NotImplementedError
++
++    @abstractmethod
++    def get_state(self):
++        raise NotImplementedError
++
++    @abstractmethod
++    def get_state_size(self):
++        """ Returns the shape of the state"""
++        raise NotImplementedError
++
++    @abstractmethod
++    def get_avail_actions(self):
++        raise NotImplementedError
++
++    @abstractmethod
++    def get_avail_agent_actions(self, agent_id):
++        """ Returns the available actions for agent_id """
++        raise NotImplementedError
++
++    @abstractmethod
++    def get_total_actions(self):
++        """ Returns the total number of actions an agent could ever take """
++        # TODO: This is only suitable for a discrete 1 dimensional action space for each agent
++        raise NotImplementedError
++
++    @abstractmethod
++    def reset(self):
++        """ Returns initial observations and states"""
++        raise NotImplementedError
++
++    @abstractmethod
++    def render(self):
++        raise NotImplementedError
++
++    @abstractmethod
++    def close(self):
++        raise NotImplementedError
++
++    @abstractmethod
++    def seed(self):
++        raise NotImplementedError
++
++    @abstractmethod
++    def save_replay(self):
++        raise NotImplementedError
++
++    def get_env_info(self):
++        env_info = {"state_shape": self.get_state_size(),
++                    "obs_shape": self.get_obs_size(),
++                    "n_actions": self.get_total_actions(),
++                    "n_agents": self.n_agents,
++                    "episode_limit": self.episode_limit}
++        return env_info
+diff -ruN a/learners/actor_critic_learner.py b/learners/actor_critic_learner.py
+--- a/learners/actor_critic_learner.py	2026-08-12 15:33:12.499603217 +0000
++++ b/learners/actor_critic_learner.py	2026-08-12 15:33:27.702915806 +0000
+@@ -1,12 +1,12 @@
+ import copy
+-from components.episode_buffer import EpisodeBatch
+-from modules.critics.coma import COMACritic
+-from modules.critics.centralV import CentralVCritic
+-from utils.rl_utils import build_td_lambda_targets
++from madac.components.episode_buffer import EpisodeBatch
++from madac.modules.critics.coma import COMACritic
++from madac.modules.critics.centralV import CentralVCritic
++from madac.utils.rl_utils import build_td_lambda_targets
+ import torch as th
+ from torch.optim import Adam
+-from modules.critics import REGISTRY as critic_resigtry
+-from components.standarize_stream import RunningMeanStd
++from madac.modules.critics import REGISTRY as critic_resigtry
++from madac.components.standarize_stream import RunningMeanStd
+ 
+ 
+ class ActorCriticLearner:
+diff -ruN a/learners/coma_learner.py b/learners/coma_learner.py
+--- a/learners/coma_learner.py	2026-08-12 15:33:12.499499645 +0000
++++ b/learners/coma_learner.py	2026-08-12 15:33:27.700397126 +0000
+@@ -1,11 +1,11 @@
+ import copy
+-from components.episode_buffer import EpisodeBatch
+-from modules.critics.coma import COMACritic
+-from utils.rl_utils import build_td_lambda_targets
++from madac.components.episode_buffer import EpisodeBatch
++from madac.modules.critics.coma import COMACritic
++from madac.utils.rl_utils import build_td_lambda_targets
+ import torch as th
+ from torch.optim import Adam
+-from modules.critics import REGISTRY as critic_registry
+-from components.standarize_stream import RunningMeanStd
++from madac.modules.critics import REGISTRY as critic_registry
++from madac.components.standarize_stream import RunningMeanStd
+ 
+ class COMALearner:
+     def __init__(self, mac, scheme, logger, args):
+diff -ruN a/learners/maddpg_learner.py b/learners/maddpg_learner.py
+--- a/learners/maddpg_learner.py	2026-08-12 15:33:12.499625940 +0000
++++ b/learners/maddpg_learner.py	2026-08-12 15:33:27.702243735 +0000
+@@ -1,11 +1,11 @@
+ import copy
+-from components.episode_buffer import EpisodeBatch
+-from modules.critics.maddpg import MADDPGCritic
++from madac.components.episode_buffer import EpisodeBatch
++from madac.modules.critics.maddpg import MADDPGCritic
+ import torch as th
+ from torch.optim import RMSprop, Adam
+-from controllers.maddpg_controller import gumbel_softmax
+-from modules.critics import REGISTRY as critic_registry
+-from components.standarize_stream import RunningMeanStd
++from madac.controllers.maddpg_controller import gumbel_softmax
++from madac.modules.critics import REGISTRY as critic_registry
++from madac.components.standarize_stream import RunningMeanStd
+ 
+ 
+ class MADDPGLearner:
+diff -ruN a/learners/ppo_learner.py b/learners/ppo_learner.py
+--- a/learners/ppo_learner.py	2026-08-12 15:33:12.499555837 +0000
++++ b/learners/ppo_learner.py	2026-08-12 15:33:27.703612797 +0000
+@@ -1,12 +1,12 @@
+ import copy
+-from components.episode_buffer import EpisodeBatch
+-from modules.critics.coma import COMACritic
+-from modules.critics.centralV import CentralVCritic
+-from utils.rl_utils import build_td_lambda_targets
++from madac.components.episode_buffer import EpisodeBatch
++from madac.modules.critics.coma import COMACritic
++from madac.modules.critics.centralV import CentralVCritic
++from madac.utils.rl_utils import build_td_lambda_targets
+ import torch as th
+ from torch.optim import Adam
+-from modules.critics import REGISTRY as critic_resigtry
+-from components.standarize_stream import RunningMeanStd
++from madac.modules.critics import REGISTRY as critic_resigtry
++from madac.components.standarize_stream import RunningMeanStd
+ 
+ 
+ class PPOLearner:
+diff -ruN a/learners/q_learner.py b/learners/q_learner.py
+--- a/learners/q_learner.py	2026-08-12 15:33:12.499648418 +0000
++++ b/learners/q_learner.py	2026-08-12 15:33:27.701632494 +0000
+@@ -1,10 +1,10 @@
+ import copy
+-from components.episode_buffer import EpisodeBatch
+-from modules.mixers.vdn import VDNMixer
+-from modules.mixers.qmix import QMixer
++from madac.components.episode_buffer import EpisodeBatch
++from madac.modules.mixers.vdn import VDNMixer
++from madac.modules.mixers.qmix import QMixer
+ import torch as th
+ from torch.optim import Adam
+-from components.standarize_stream import RunningMeanStd
++from madac.components.standarize_stream import RunningMeanStd
+ 
+ 
+ class QLearner:
+diff -ruN a/learners/qtran_learner.py b/learners/qtran_learner.py
+--- a/learners/qtran_learner.py	2026-08-12 15:33:12.499531865 +0000
++++ b/learners/qtran_learner.py	2026-08-12 15:33:27.701045194 +0000
+@@ -1,6 +1,6 @@
+ import copy
+-from components.episode_buffer import EpisodeBatch
+-from modules.mixers.qtran import QTranBase
++from madac.components.episode_buffer import EpisodeBatch
++from madac.modules.mixers.qtran import QTranBase
+ import torch as th
+ from torch.optim import RMSprop, Adam
+ 
+diff -ruN a/main.py b/main.py
+--- a/main.py	2026-08-12 15:33:12.490809290 +0000
++++ b/main.py	2026-08-12 15:33:29.906425662 +0000
+@@ -10,10 +10,10 @@
+ from sacred.utils import apply_backspaces_and_linefeeds
+ import sys
+ import torch as th
+-from utils.logging import get_logger
++from madac.utils.logging import get_logger
+ import yaml
+ 
+-from run import run
++from madac.run import run
+ 
+ # set to "no" if you want to see stdout/stderr in console
+ SETTINGS['CAPTURE_MODE'] = "fd"
+@@ -23,8 +23,7 @@
+ ex.logger = logger
+ ex.captured_out_filter = apply_backspaces_and_linefeeds
+ 
+-results_path = os.path.join(
+-    dirname(dirname(dirname(abspath(__file__)))), "results", "madac")
++results_path = os.path.join(os.getcwd(), "results", "madac")
+ 
+ 
+ @ex.main
+diff -ruN a/modules/agents/rnn_ns_agent.py b/modules/agents/rnn_ns_agent.py
+--- a/modules/agents/rnn_ns_agent.py	2026-08-12 15:33:12.500007944 +0000
++++ b/modules/agents/rnn_ns_agent.py	2026-08-12 15:33:27.708053671 +0000
+@@ -1,5 +1,5 @@
+ import torch.nn as nn
+-from modules.agents.rnn_agent import RNNAgent
++from madac.modules.agents.rnn_agent import RNNAgent
+ import torch as th
+ 
+ class RNNNSAgent(nn.Module):
+diff -ruN a/modules/critics/ac_ns.py b/modules/critics/ac_ns.py
+--- a/modules/critics/ac_ns.py	2026-08-12 15:33:12.500271606 +0000
++++ b/modules/critics/ac_ns.py	2026-08-12 15:33:27.707539757 +0000
+@@ -1,7 +1,7 @@
+ import torch as th
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from modules.critics.mlp import MLP
++from madac.modules.critics.mlp import MLP
+ 
+ 
+ class ACCriticNS(nn.Module):
+diff -ruN a/modules/critics/centralV_ns.py b/modules/critics/centralV_ns.py
+--- a/modules/critics/centralV_ns.py	2026-08-12 15:33:12.500082388 +0000
++++ b/modules/critics/centralV_ns.py	2026-08-12 15:33:27.706262256 +0000
+@@ -1,7 +1,7 @@
+ import torch as th
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from modules.critics.mlp import MLP
++from madac.modules.critics.mlp import MLP
+ 
+ 
+ class CentralVCriticNS(nn.Module):
+diff -ruN a/modules/critics/coma_ns.py b/modules/critics/coma_ns.py
+--- a/modules/critics/coma_ns.py	2026-08-12 15:33:12.500106850 +0000
++++ b/modules/critics/coma_ns.py	2026-08-12 15:33:27.707107723 +0000
+@@ -1,7 +1,7 @@
+ import torch as th
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from modules.critics.mlp import MLP
++from madac.modules.critics.mlp import MLP
+ 
+ 
+ class COMACriticNS(nn.Module):
+diff -ruN a/modules/critics/maddpg_ns.py b/modules/critics/maddpg_ns.py
+--- a/modules/critics/maddpg_ns.py	2026-08-12 15:33:12.500124831 +0000
++++ b/modules/critics/maddpg_ns.py	2026-08-12 15:33:27.707805541 +0000
+@@ -1,7 +1,7 @@
+ import torch as th
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from modules.critics.mlp import MLP
++from madac.modules.critics.mlp import MLP
+ 
+ 
+ class MADDPGCriticNS(nn.Module):
+diff -ruN a/run.py b/run.py
+--- a/run.py	2026-08-12 15:33:12.499745286 +0000
++++ b/run.py	2026-08-12 15:33:32.294213273 +0000
+@@ -5,15 +5,15 @@
+ import threading
+ import torch as th
+ from types import SimpleNamespace as SN
+-from utils.logging import Logger
+-from utils.timehelper import time_left, time_str
++from madac.utils.logging import Logger
++from madac.utils.timehelper import time_left, time_str
+ from os.path import dirname, abspath
+ 
+-from learners import REGISTRY as le_REGISTRY
+-from runners import REGISTRY as r_REGISTRY
+-from controllers import REGISTRY as mac_REGISTRY
+-from components.episode_buffer import ReplayBuffer
+-from components.transforms import OneHot
++from madac.learners import REGISTRY as le_REGISTRY
++from madac.runners import REGISTRY as r_REGISTRY
++from madac.controllers import REGISTRY as mac_REGISTRY
++from madac.components.episode_buffer import ReplayBuffer
++from madac.components.transforms import OneHot
+ 
+ 
+ def run(_run, _config, _log):
+@@ -47,8 +47,7 @@
+ 
+     args.unique_token = unique_token
+     if args.use_tensorboard:
+-        tb_logs_direc = os.path.join(
+-            dirname(dirname(dirname(abspath(__file__)))), "results", "madac", "tb_logs")
++        tb_logs_direc = os.path.join(os.getcwd(), "results", "madac", "tb_logs")
+         tb_exp_direc = os.path.join(tb_logs_direc, "{}").format(unique_token)
+         logger.setup_tb(tb_exp_direc)
+ 
+diff -ruN a/runners/episode_runner.py b/runners/episode_runner.py
+--- a/runners/episode_runner.py	2026-08-12 15:33:12.500801044 +0000
++++ b/runners/episode_runner.py	2026-08-12 15:33:27.705096126 +0000
+@@ -1,7 +1,7 @@
+ import random
+-from envs import REGISTRY as env_REGISTRY
++from madac.envs import REGISTRY as env_REGISTRY
+ from functools import partial
+-from components.episode_buffer import EpisodeBatch
++from madac.components.episode_buffer import EpisodeBatch
+ import numpy as np
+ 
+ 
+diff -ruN a/runners/parallel_runner.py b/runners/parallel_runner.py
+--- a/runners/parallel_runner.py	2026-08-12 15:33:12.500756160 +0000
++++ b/runners/parallel_runner.py	2026-08-12 15:33:27.704478807 +0000
+@@ -1,6 +1,6 @@
+-from envs import REGISTRY as env_REGISTRY
++from madac.envs import REGISTRY as env_REGISTRY
+ from functools import partial
+-from components.episode_buffer import EpisodeBatch
++from madac.components.episode_buffer import EpisodeBatch
+ from multiprocessing import Pipe, Process
+ import numpy as np
+ import random

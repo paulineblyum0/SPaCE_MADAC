@@ -58,7 +58,7 @@ import argparse
 
 import numpy as np
 
-from mamo.mamo_register import Task
+from mamo.mamo_register import Task, get_maenv
 from dqn.test_dqn import run_repeats
 
 
@@ -79,7 +79,8 @@ class DQNIGDEvalHook:
 
         # same task-suite convention as test_dqn.py's __main__: all 8
         # problems sharing the training key's M value, e.g. M_2_46_3 -> all3
-        self.tasks = Task.get_task(name="all" + args.key.split("_")[-1])
+        func_list, nobjs_list = get_maenv(args.key)
+        self.tasks = [f"{f}_{n}" for f in func_list for n in nobjs_list]
         self._history = {
             t: {"best_mean": [], "best_std": [], "last_mean": [], "last_std": []}
             for t in self.tasks

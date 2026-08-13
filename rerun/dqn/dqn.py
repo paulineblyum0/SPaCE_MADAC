@@ -26,7 +26,7 @@ def get_args():
     parser.add_argument('--n-ref-points', type=int, default=1000)
     parser.add_argument('--save-history', action="store_true", default=False)
     parser.add_argument('--baseline', action="store_true", default=False)
-    parser.add_argument('--adaptive-open', action="store_true", default=False)
+    parser.add_argument('--adaptive-open', action="store_true", default=True)
     parser.add_argument('--early-stop', action="store_true", default=False)
     parser.add_argument('--test', action="store_true", default=False)
     args = parser.parse_known_args()[0]
