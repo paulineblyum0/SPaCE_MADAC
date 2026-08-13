@@ -14,6 +14,7 @@ from madac.runners import REGISTRY as r_REGISTRY
 from madac.controllers import REGISTRY as mac_REGISTRY
 from madac.components.episode_buffer import ReplayBuffer
 from madac.components.transforms import OneHot
+from madac.madac_igd_eval_hook import MADACIGDEvalHook
 
 
 def run(_run, _config, _log):
@@ -47,7 +48,8 @@ def run(_run, _config, _log):
 
     args.unique_token = unique_token
     if args.use_tensorboard:
-        tb_logs_direc = os.path.join(os.getcwd(), "results", "madac", "tb_logs")
+        tb_logs_direc = os.path.join(
+            dirname(dirname(abspath(__file__))), "results", "madac", "tb_logs")
         tb_exp_direc = os.path.join(tb_logs_direc, "{}").format(unique_token)
         logger.setup_tb(tb_exp_direc)
 
@@ -130,6 +132,8 @@ def run_sequential(args, logger):
 
     if args.use_cuda:
         learner.cuda()
+
+    igd_hook = MADACIGDEvalHook(args, scheme, groups, preprocess, n_repeats=10)
 
     if args.checkpoint_path != "":
 
@@ -222,6 +226,8 @@ def run_sequential(args, logger):
             for _ in range(n_test_runs):
                 runner.run(test_mode=True)
 
+        igd_hook.maybe_eval(runner.t_env, mac)
+
         if args.save_model and (
                 runner.t_env - model_save_time >= args.save_model_interval
                 or model_save_time == 0
@@ -244,6 +250,7 @@ def run_sequential(args, logger):
             logger.print_recent_stats()
             last_log_T = runner.t_env
 
+    igd_hook.close()
     runner.close_env()
     logger.console_logger.info("Finished Training")
 

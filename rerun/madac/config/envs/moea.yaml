@@ -19,5 +19,5 @@ test_interval: 20000
 log_interval: 20000
 runner_log_interval: 5000
 learner_log_interval: 5000
-t_max: 405000 # 400K
+t_max: 400000 # 400K
 batch_size_run: 12

@@ -8,3 +8,6 @@ platypus-opt
 ray
 stable-baselines3
 optuna
+sacred
+PyYAML
+setuptools<81
