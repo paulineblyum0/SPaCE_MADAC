@@ -1,0 +1,11 @@
+
+
+
+# Generated results
+/results/  
+/space/results
+/logs
+
+__pycache__/
+*.pyc
+

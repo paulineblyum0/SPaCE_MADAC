@@ -34,7 +34,7 @@ from platypus.types import Real, Binary
 def getUniformPoints(N, M):
     """
     Generate approximately N uniformly distributed points on an M-dimensional unit simplex.
-    Uses the simplex-lattice design from Das and Dennis (1998).
+    Simplex-lattice design from Das and Dennis (1998).
     
     :param N: target number of points
     :param M: number of objectives (simplex dimension)

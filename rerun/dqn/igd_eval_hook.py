@@ -1,57 +1,5 @@
 """
 Periodic IGD evaluation for Tianshou DQN training.
-
-Tianshou's OffPolicyTrainer has no EvalCallback/BaseCallback mechanism like
-SB3. The only step-level hook is train_fn(epoch, env_step), already used in
-dqn.py for epsilon annealing. This hook wraps that same call point.
-
-Reuses test_dqn.py's run_repeats/step_in_env directly rather than
-duplicating eval-episode logic, so seeding and episode-running can't drift
-between the mid-training diagnostic curve and the final reported
-30-repeat evaluation.
-
-Scope: evaluates on ALL 8 problems in the training key's task suite (same
-"all" + M convention as test_dqn.py's __main__), not just the training key
-itself -- e.g. training on M_2_46_3 evaluates on all 8 M=3 problems each
-time it fires. Problems are evaluated consecutively, one after another;
-only the n_repeats repeats *within* a single problem are Ray-parallel.
-That means each trigger costs 8 sequential rounds of n_repeats-parallel
-episodes, not one.
-
-Usage in dqn.py, replacing the existing train_fn:
-
-    import ray
-    from dqn.igd_eval_hook import DQNIGDEvalHook
-
-    igd_hook = DQNIGDEvalHook(
-        policy=policy,
-        args=args,
-        eval_freq_early=5000,     # cadence while env_step < switch_step
-        eval_freq_late=10000,     # coarser cadence after switch_step --
-                                   # learning is typically front-loaded, so
-                                   # the tail doesn't need the finer grid
-        switch_step=100000,
-        n_repeats=10,             # hardcoded 10 for the training curve;
-                                   # final reported policy still uses 30
-                                   # via test_dqn.py, unchanged
-        base_train_fn=train_fn,   # existing eps-annealing function
-        save_path=os.path.join(log_path, "igd_curve.npz"),
-    )
-
-    ray.init(num_cpus=10)  # >= n_repeats; call once, before trainer.run()
-
-    trainer = OffPolicyTrainer(
-        ...
-        params=OffPolicyTrainerParams(
-            ...
-            training_fn=igd_hook,   # replaces training_fn=train_fn
-            ...
-        ),
-    )
-
-ray.init() is deliberately NOT called inside this module -- dqn.py owns
-that, same convention as test_dqn.py's own ray.init(num_cpus=dqn_args.repeat)
-in its __main__.
 """
 
 import argparse
@@ -77,8 +25,7 @@ class DQNIGDEvalHook:
         self._last_eval_step = 0
         self._steps = []
 
-        # same task-suite convention as test_dqn.py's __main__: all 8
-        # problems sharing the training key's M value, e.g. M_2_46_3 -> all3
+        # loops through the three training functions
         func_list, nobjs_list = get_maenv(args.key)
         self.tasks = [f"{f}_{n}" for f in func_list for n in nobjs_list]
         self._history = {
@@ -87,17 +34,11 @@ class DQNIGDEvalHook:
         }
 
     def _current_eval_freq(self, env_step):
-        # finer resolution while learning is likely still moving; coarser
-        # once past switch_step, on the assumption (worth checking against
-        # the actual curve) that most improvement happens early and the
-        # tail is comparatively flat
+        # finer resolution earlier on
         return self.eval_freq_early if env_step < self.switch_step else self.eval_freq_late
 
     def _eval_all_problems(self):
-        # per-problem args copies -- deliberately NOT mutating self.args.key
-        # in place. self.args is the same object dqn.py uses elsewhere (e.g.
-        # save_best_fn's checkpoint filename), so overwriting args.key here
-        # would silently corrupt those after the first eval fires.
+        # per-problem args copies
         self.policy.eval()
         for t in self.tasks:
             args_t = argparse.Namespace(**{**vars(self.args), "key": t})

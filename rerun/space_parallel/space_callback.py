@@ -26,6 +26,7 @@ class UpdateEnvCallbackParallel(BaseCallback):
         probe_env_kwargs: dict = None,
         logger_override: logging.Logger = None,
         verbose: int = 0,
+        probe_seed_base: int = 0,
     ):
         super().__init__(verbose)
 
@@ -36,6 +37,7 @@ class UpdateEnvCallbackParallel(BaseCallback):
         self.eta_const = eta_const
         self.step_size_const = step_size_const
         self.probe_env_kwargs = probe_env_kwargs or {}
+        self.probe_seed_base = probe_seed_base
 
         self.space_logger = logger_override or logging.getLogger("space_callback_parallel")
 
@@ -98,9 +100,6 @@ class UpdateEnvCallbackParallel(BaseCallback):
     def _on_training_end(self) -> None:
         self.probe_env.close()
 
-    # ------------------------------------------------------------------
-    # Curriculum size growth -- original SPACE rule, monotone
-    # ------------------------------------------------------------------
 
     def _update_curriculum_size(self, evals) -> None:
         # mean_q over the curriculum that was ACTIVE for the rollout just
@@ -115,17 +114,16 @@ class UpdateEnvCallbackParallel(BaseCallback):
             return
 
         delta_q = np.abs(np.abs(mean_q) - np.abs(self.last_q))
-        # Assign before the comparison so the threshold scales on the current
-        # estimate, matching baselines_spl.py.
         self.last_q = mean_q
+        threshold = self.eta_const * np.abs(self.last_q)
+       
 
         self.space_logger.info(
             "mean_q=%.6f delta_q=%.6f threshold=%.6f",
-            mean_q, delta_q, self.eta_const * np.abs(self.last_q),
+            mean_q, delta_q, threshold,
         )
 
-        if delta_q <= self.eta_const * np.abs(self.last_q) \
-                and self.curriculum_size < self.num_training_functions:
+        if delta_q <= threshold and self.curriculum_size < self.num_training_functions:
             old_size = self.curriculum_size
             self.curriculum_size = min(
                 old_size + self.step_size_const, self.num_training_functions
@@ -137,6 +135,7 @@ class UpdateEnvCallbackParallel(BaseCallback):
             self.space_logger.info(
                 "Curriculum size held at %d", self.curriculum_size
             )
+        
 
     # ------------------------------------------------------------------
     # Curriculum ordering
@@ -203,7 +202,7 @@ class UpdateEnvCallbackParallel(BaseCallback):
         for i in range(self.num_training_functions):
             self.probe_env.set_curriculum([i])
             self.probe_env.reset_curriculum_index()
-            obs, _ = self.probe_env.reset()
+            obs, _ = self.probe_env.reset(seed=self.probe_seed_base + i)
             obs_t = obs_as_tensor(
                 np.asarray(obs, dtype=np.float32), self.model.device
             ).unsqueeze(0)

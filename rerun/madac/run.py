@@ -135,6 +135,17 @@ def run_sequential(args, logger):
 
     igd_hook = MADACIGDEvalHook(args, scheme, groups, preprocess, n_repeats=10)
 
+    if getattr(args, "eval_t0", False):
+        t0_path = os.path.join(args.local_results_path, "madac", "igd_curves",
+            f"{args.name}_{args.env_args['key']}_seed_{args.seed}_t0.npz")
+        os.makedirs(os.path.dirname(t0_path), exist_ok=True)
+        igd_hook.curve_path = t0_path
+        logger.console_logger.info(f"eval_t0=True -- untrained-policy eval only, no training. Saving to {t0_path}")
+        igd_hook.eval_now(0, mac)
+        igd_hook.close()
+        runner.close_env()
+        return
+
     if args.checkpoint_path != "":
 
         timesteps = []

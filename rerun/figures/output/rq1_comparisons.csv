@@ -1,0 +1,9 @@
+problem,a,b,mean_a,mean_b,better,ranksum_stat,p,p_holm,seeds_a_better
+DTLZ2_3,adaptive_open=False,adaptive_open=True,0.0468,0.0411,adaptive_open=True,11.555,0.0000,0.0000,0/3
+DTLZ4_3,adaptive_open=False,adaptive_open=True,0.0653,0.0519,adaptive_open=True,9.616,0.0000,0.0000,0/3
+WFG4_3,adaptive_open=False,adaptive_open=True,0.0711,0.0563,adaptive_open=True,11.587,0.0000,0.0000,0/3
+WFG5_3,adaptive_open=False,adaptive_open=True,0.0638,0.0479,adaptive_open=True,11.587,0.0000,0.0000,0/3
+WFG6_3,adaptive_open=False,adaptive_open=True,0.0869,0.0756,adaptive_open=True,4.074,0.0000,0.0000,0/3
+WFG7_3,adaptive_open=False,adaptive_open=True,0.0607,0.0441,adaptive_open=True,11.587,0.0000,0.0000,0/3
+WFG8_3,adaptive_open=False,adaptive_open=True,0.0962,0.0825,adaptive_open=True,11.587,0.0000,0.0000,0/3
+WFG9_3,adaptive_open=False,adaptive_open=True,0.0894,0.0673,adaptive_open=True,7.670,0.0000,0.0000,0/3

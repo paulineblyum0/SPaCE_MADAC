@@ -8,10 +8,10 @@ from sacred.observers import FileStorageObserver
 from sacred.utils import apply_backspaces_and_linefeeds
 import sys
 import torch as th
-from utils.logging import get_logger
+from madac.utils.logging import get_logger
 import yaml
 
-from run import run
+from madac.run import run
 
 # set to "no" if you want to see stdout/stderr in console
 SETTINGS['CAPTURE_MODE'] = "fd"
@@ -21,11 +21,7 @@ ex = Experiment("pymarl")
 ex.logger = logger
 ex.captured_out_filter = apply_backspaces_and_linefeeds
 
-# NOTE: this file now lives at rerun/madac/main.py (one level shallower than
-# the original rerun/algos/madac/main.py), so this only needs to walk up
-# TWO parent directories -- not three -- to land at rerun/results/madac.
-# Getting this wrong silently writes results one directory above rerun/
-# instead of inside it.
+
 results_path = os.path.join(
     dirname(dirname(abspath(__file__))), "results", "madac")
 
@@ -121,19 +117,24 @@ if __name__ == '__main__':
     except:
         map_name = config_dict["env_args"]["key"]
 
+   
+    seed = config_dict["seed"]
     for param in params:
         if param.startswith("env_args.map_name"):
             map_name = param.split("=")[1]
         elif param.startswith("env_args.key"):
             map_name = param.split("=")[1]
+        elif param.startswith("seed="):
+            seed = int(param.split("=")[1])
 
     # Save to disk by default for sacred
     logger.info("Saving to FileStorageObserver in results/sacred.")
     file_obs_path = os.path.join(
-        results_path, f"sacred/{config_dict['name']}/{map_name}")
+        results_path, f"sacred/{config_dict['name']}/{map_name}/seed_{seed}")
 
     config_dict["env_args"]["replay_dir"] = os.path.join(
-        results_path, f"{alg_config['name']}_{map_name.split('_')[-1]}_{config_dict['load_step']}", map_name)
+        results_path, f"{alg_config['name']}_{map_name.split('_')[-1]}_{config_dict['load_step']}",
+        map_name, f"seed_{seed}")
 
     # now add all the config to sacred
     ex.add_config(config_dict)

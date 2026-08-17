@@ -13,6 +13,7 @@ from tianshou.trainer import OffPolicyTrainer, OffPolicyTrainerParams
 from tianshou.utils import TensorboardLogger
 from tianshou.utils.net.common import Net
 from torch.utils.tensorboard import SummaryWriter
+import numpy as np
 
 from dqn.igd_eval_hook import DQNIGDEvalHook
 
@@ -29,6 +30,7 @@ def get_args():
     parser.add_argument('--adaptive-open', action="store_true", default=True)
     parser.add_argument('--early-stop', action="store_true", default=False)
     parser.add_argument('--test', action="store_true", default=False)
+    parser.add_argument('--eval-t0', action="store_true", default=False)
     args = parser.parse_known_args()[0]
     return args
 
@@ -49,10 +51,7 @@ class DQNargs:
     update_per_step = 0.05  # maps to update_step_num_gradient_steps_per_sample
     batch_size = 32
 
-    # mid-training IGD diagnostic curve (separate from the final 30-repeat
-    # evaluation done later by test_dqn.py) -- finer resolution early,
-    # coarser once past switch_step, since improvement is typically
-    # front-loaded and the tail doesn't need as fine a grid
+    # mid-training IGD curve 
     igd_eval_freq_early = 5000
     igd_eval_freq_late = 10000
     igd_eval_switch_step = 100000
@@ -62,6 +61,8 @@ class DQNargs:
 if __name__ == "__main__":
     args = get_args()
     args.early_stop = True
+    eval_t0 = args.eval_t0
+    del args.eval_t0
     dqn_args = DQNargs()
 
     env = MOEAEnv(**vars(args))
@@ -71,8 +72,10 @@ if __name__ == "__main__":
 
     train_envs.seed(args.seed)
 
-    # observation_space is a Dict space with 'obs' and 'mask' keys;
-    # Net only sees the 'obs' subspace
+    if eval_t0:
+        torch.manual_seed(args.seed)
+
+    
     state_shape = env.observation_space['obs'].shape
     action_shape = env.action_space.n
 
@@ -92,6 +95,19 @@ if __name__ == "__main__":
         eps_inference=0.0,
     )
 
+    if eval_t0:
+        log_path = os.path.join('./results/dqn/trained', args.key, f'seed_{args.seed}')
+        os.makedirs(log_path, exist_ok=True)
+        hook = DQNIGDEvalHook(policy=policy, args=args, n_repeats=10, save_path=os.path.join(log_path, "igd_curve_t0.npz"))
+        ray.init(num_cpus=10)
+        hook._steps.append(0)
+        hook._eval_all_problems()
+        flat = {f"{t}_{m}": np.array(v) for t, h in hook._history.items() for m, v in h.items()}
+        np.savez(hook.save_path, steps=np.array(hook._steps), **flat)
+        ray.shutdown()
+        print(f"t=0 eval saved to {hook.save_path}")
+        raise SystemExit
+
     algorithm = DQN(
         policy=policy,
         optim=AdamOptimizerFactory(lr=dqn_args.lr),
@@ -104,7 +120,7 @@ if __name__ == "__main__":
     train_collector = Collector(policy, train_envs, buf, exploration_noise=True)
 
     ao_tag = '' if args.adaptive_open else '_ao_false'
-    log_path = os.path.join('./results/dqn', args.key, f'seed_{args.seed}{ao_tag}')
+    log_path = os.path.join('./results/dqn/trained', args.key, f'seed_{args.seed}{ao_tag}')
     writer = SummaryWriter(log_path)
     logger = TensorboardLogger(writer)
 
@@ -119,9 +135,7 @@ if __name__ == "__main__":
         else:
             policy.set_eps_training(0.1 * dqn_args.eps_train)
 
-    # Ray workers for the mid-training eval hook -- separate pool from the
-    # SubprocVectorEnv workers above, sized to igd_eval_repeats since the
-    # only thing parallelised within a single problem's eval is the repeats.
+    # Ray workers for the mid-training eval hook
     ray.init(num_cpus=dqn_args.igd_eval_repeats)
 
     igd_hook = DQNIGDEvalHook(
@@ -153,8 +167,7 @@ if __name__ == "__main__":
     result = trainer.run()
     print(f'Finished training! Duration: {result.timing.total_time:.2f}s')
 
-    # Save final policy unconditionally, same convention as ppo.py
-    # (model.save() after model.learn() with no intermediate "best" tracking).
+
     model_path = os.path.join(log_path, args.key + 'policy.pth')
     torch.save(policy.state_dict(), model_path)
     print(f'Model saved to {model_path}')

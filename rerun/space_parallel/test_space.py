@@ -24,8 +24,9 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--key', type=str, default='M_2_46_3')
     parser.add_argument('--use-space', type=int, choices=[0, 1, 2], default=2)
-    parser.add_argument('--instance-ordering', type=int, choices=[0, 1, 2], default=0) 
+    parser.add_argument('--instance-ordering', type=int, choices=[0, 1, 2], default=1) 
     parser.add_argument('--seed', type=int, default=2022)
+    parser.add_argument('--train-seed', type=int, default=42)
     parser.add_argument('--repeat', type=int, default=30)
     parser.add_argument('--population-size', type=int, default=210)
     parser.add_argument('--budget-ratio', type=int, default=100)
@@ -103,7 +104,7 @@ if __name__ == "__main__":
     else:
         tag = f"space{args.use_space}"
 
-    model_path = os.path.join("space_parallel", "results", train_key, tag, f"seed_{args.seed}", "ppo_model")
+    model_path = os.path.join("results", "space_parallel", "trained", train_key, tag, f"seed_{args.train_seed}", "ppo_model")
     
     set_global_seeds(args.seed)
     task = Task.get_task(name="all" + train_key.split("_")[-1])
@@ -112,7 +113,7 @@ if __name__ == "__main__":
     model = PPO.load(model_path)
     policy_ref = ray.put(model.policy.state_dict())
 
-    save_path = f'./results/space_parallel/{tag}/'
+    save_path = f'./results/space_parallel/eval/{train_key}/{tag}/seed_{args.train_seed}/'
 
     for t in task:
         args.key = t

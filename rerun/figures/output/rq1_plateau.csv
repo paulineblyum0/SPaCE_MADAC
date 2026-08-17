@@ -1,0 +1,17 @@
+problem,condition,n_seeds,n_generations,plateau_gen_frac0.005,plateau_gen_frac0.0025
+DTLZ2_3,adaptive_open=False,3,300,102,121
+DTLZ2_3,adaptive_open=True,3,300,168,213
+DTLZ4_3,adaptive_open=False,3,300,236,264
+DTLZ4_3,adaptive_open=True,3,300,231,259
+WFG4_3,adaptive_open=False,3,300,257,280
+WFG4_3,adaptive_open=True,3,300,246,259
+WFG5_3,adaptive_open=False,3,300,53,62
+WFG5_3,adaptive_open=True,3,300,195,225
+WFG6_3,adaptive_open=False,3,300,218,263
+WFG6_3,adaptive_open=True,3,300,278,291
+WFG7_3,adaptive_open=False,3,300,197,221
+WFG7_3,adaptive_open=True,3,300,242,257
+WFG8_3,adaptive_open=False,3,300,256,279
+WFG8_3,adaptive_open=True,3,300,264,279
+WFG9_3,adaptive_open=False,3,300,194,224
+WFG9_3,adaptive_open=True,3,300,277,287

@@ -100,12 +100,14 @@ def main():
     if args.use_space == 2:  # INSTANCE_STATE — ordering choice actually matters
         ordering_tag = ORDERING_NAMES[args.instance_ordering]
         results_dir = os.path.join(
-            "space_parallel", "results", args.key,
+            "results", "space_parallel", "trained", args.key,
             f"space{args.use_space}_{ordering_tag}",
+            f"seed_{args.seed}"
         )
     else:
         results_dir = os.path.join(
-            "space_parallel", "results", args.key, f"space{args.use_space}"
+            "results", "space_parallel", "trained", args.key, f"space{args.use_space}",
+            f"seed_{args.seed}"
         )
     os.makedirs(results_dir, exist_ok=True)
 

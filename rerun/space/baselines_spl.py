@@ -1,3 +1,6 @@
+"""
+From original Eimer et al. 2021 code base. Used for reference.
+"""
 from stable_baselines.ppo2 import PPO2
 from stable_baselines.trpo_mpi import TRPO
 from stable_baselines.common.policies import MlpPolicy
