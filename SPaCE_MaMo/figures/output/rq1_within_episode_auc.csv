@@ -1,0 +1,17 @@
+problem,algorithm,n_seeds,mean,sd,generation_range
+DTLZ2_3,adaptive_open=False,90,0.0703,0.0133,0-299
+DTLZ2_3,adaptive_open=True,90,0.0855,0.0451,0-299
+DTLZ4_3,adaptive_open=False,90,0.1290,0.0409,0-299
+DTLZ4_3,adaptive_open=True,90,0.1398,0.0718,0-299
+WFG4_3,adaptive_open=False,90,0.0852,0.0022,0-299
+WFG4_3,adaptive_open=True,90,0.0758,0.0106,0-299
+WFG5_3,adaptive_open=False,90,0.0647,0.0007,0-299
+WFG5_3,adaptive_open=True,90,0.0535,0.0007,0-299
+WFG6_3,adaptive_open=False,90,0.0958,0.0161,0-299
+WFG6_3,adaptive_open=True,90,0.0902,0.0144,0-299
+WFG7_3,adaptive_open=False,90,0.0783,0.0029,0-299
+WFG7_3,adaptive_open=True,90,0.0697,0.0161,0-299
+WFG8_3,adaptive_open=False,90,0.1175,0.0030,0-299
+WFG8_3,adaptive_open=True,90,0.1127,0.0168,0-299
+WFG9_3,adaptive_open=False,90,0.0979,0.0184,0-299
+WFG9_3,adaptive_open=True,90,0.0817,0.0213,0-299

@@ -1,0 +1,7 @@
+# Generated results
+/results/  
+/logs
+
+__pycache__/
+*.pyc
+
